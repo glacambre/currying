@@ -145,16 +145,16 @@ char* wrap_r9 (char* code, char* next_function, char* last_function) {
 void* createfunction (void* fn, int arg_count, ...) {
 	if (arg_count > 6)
 		return NULL;
+	// Why 512: each argument uses 32 bytes of memory and there's a maximum of 6 arguments.
+	// 32 * 6 = 192, the next power of two is 256. We then double that to make sure we have enough space for the function that calls the original curried function.
 	int mmap_size = 512;
 	// Grab write/exec memory for the code
 	char* prog = mmap(0, mmap_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	// Prog is a pointer to the place we're currently writing code to, we need prog_beginning to remember where we started
 	char* prog_beginning = prog;
 	// last_call is a pointer to the place withing the last function where we're writing code
-	// Why 256: each argument uses 32 bytes of memory and there's a maximum of 6 arguments.
-	// 32 * 6 = 192, the next power of two is 256.
 	char* last_call = prog + (mmap_size / 2);
-	// Since last_call moves aroung, we need last_call_beginning to remember where it starts
+	// Since last_call moves around, we need last_call_beginning to remember where it starts
 	char* last_call_beginning = last_call;
 	if (prog == (void*) -1) {
 		perror("mmap");
@@ -168,12 +168,14 @@ void* createfunction (void* fn, int arg_count, ...) {
 	char* (*int_wrap[6])(char*, char*, char*) = { wrap_rdi, wrap_rsi, wrap_rdx, wrap_rcx, wrap_r8, wrap_r9 };
 	for (int i = 0; i < arg_count; ++i) {
 		if (va_arg(arg_types, type) == TYPE_INT) {
-			// 23: Number of bytes used by an int_wrap function
+			// 32: Number of bytes used by an int_wrap function
 			prog = int_wrap[i](prog, prog + 32, last_call);
 			// 10: Number of bytes added to last_call_cur by an int_wrap function
 			last_call += 10;
 		} else {
+			// Not supported yet
 			munmap(prog, mmap_size);
+			return NULL;
 		}
 	}
 
