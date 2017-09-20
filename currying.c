@@ -8,15 +8,15 @@
 typedef enum { TYPE_INT, TYPE_DOUBLE } type;
 
 char* as_8_bytes (char buf[8], void* addr) {
-	buf[0] = ((intptr_t) addr) & 0xFF;
-	buf[1] = (((intptr_t) addr) >> 8) & 0xFF;
-	buf[2] = (((intptr_t) addr) >> 16) & 0xFF;
-	buf[3] = (((intptr_t) addr) >> 24) & 0xFF;
-	buf[4] = (((intptr_t) addr) >> 32) & 0xFF;
-	buf[5] = (((intptr_t) addr) >> 40) & 0xFF;
-	buf[6] = (((intptr_t) addr) >> 48) & 0xFF;
-	buf[7] = (((intptr_t) addr) >> 56) & 0xFF;
-	return buf + 8;
+	*(buf++) = ((intptr_t) addr) & 0xFF;
+	*(buf++) = (((intptr_t) addr) >> 8) & 0xFF;
+	*(buf++) = (((intptr_t) addr) >> 16) & 0xFF;
+	*(buf++) = (((intptr_t) addr) >> 24) & 0xFF;
+	*(buf++) = (((intptr_t) addr) >> 32) & 0xFF;
+	*(buf++) = (((intptr_t) addr) >> 40) & 0xFF;
+	*(buf++) = (((intptr_t) addr) >> 48) & 0xFF;
+	*(buf++) = (((intptr_t) addr) >> 56) & 0xFF;
+	return buf;
 }
 
 /* Size: 10 bytes/opcodes
@@ -49,7 +49,7 @@ char* mov_rax1_byte (char* code, char byte) {
 
 /* Size: 4 bytes
  */
-char* mov_rax2_rdi (char* code) {
+char* mov_rax_rdi (char* code) {
 	*(code++) = 0x48;
 	*(code++) = 0x89;
 	*(code++) = 0x78;
@@ -78,7 +78,7 @@ char* wrap_reg (char* code, char* next_function, char* last_function, char reg1,
 	// mov [last_function], `mov rdi, $rdi`
 	code = mov_rax_byte(code, reg1);
 	code = mov_rax1_byte(code, reg2);
-	code = mov_rax2_rdi(code);
+	code = mov_rax_rdi(code);
 	
 	code = mov_rax_8bytes(code, next_function);
 	return ret(code);
