@@ -68,78 +68,44 @@ char* ret (char* code) {
 /* code: Byte array where we can write the code that should be executed when a curryied function is called
  * next_function: The function address that should be returned by the curried call
  * last_function: The last curried function than can be called, offset to where it can be written to without overwriting it
+ * reg1: the first byte of the ID of the reg, depends on modrm
+ * reg2: the second byte-ID of the reg, depends on modrm
  * Size: 32 bytes
  */
-char* wrap_rdi (char* code, char* next_function, char* last_function) {
+char* wrap_reg (char* code, char* next_function, char* last_function, char reg1, char reg2) {
 	code = mov_rax_8bytes(code, last_function);
 
 	// mov [last_function], `mov rdi, $rdi`
-	code = mov_rax_byte(code, 0x48);
-	code = mov_rax1_byte(code, 0xbf);
+	code = mov_rax_byte(code, reg1);
+	code = mov_rax1_byte(code, reg2);
 	code = mov_rax2_rdi(code);
 	
 	code = mov_rax_8bytes(code, next_function);
 	return ret(code);
+}
+
+char* wrap_rdi (char* code, char* next_function, char* last_function) {
+	return wrap_reg(code, next_function, last_function, 0x48, 0xbf);
 }
 
 char* wrap_rsi (char* code, char* next_function, char* last_function) {
-	code = mov_rax_8bytes(code, last_function);
-
-	// mov [last_function], `mov rsi, $rdi`
-	code = mov_rax_byte(code, 0x48);
-	code = mov_rax1_byte(code, 0xbe);
-	code = mov_rax2_rdi(code);
-
-	code = mov_rax_8bytes(code, next_function);
-	return ret(code);
+	return wrap_reg(code, next_function, last_function, 0x48, 0xbe);
 }
 
 char* wrap_rdx (char* code, char* next_function, char* last_function) {
-	code = mov_rax_8bytes(code, last_function);
-	
-	// mov [last_function], `mov rdx, $rdi`
-	code = mov_rax_byte(code, 0x48);
-	code = mov_rax1_byte(code, 0xba);
-	code = mov_rax2_rdi(code);
-
-	code = mov_rax_8bytes(code, next_function);
-	return ret(code);
+	return wrap_reg(code, next_function, last_function, 0x48, 0xba);
 }
 
 char* wrap_rcx (char* code, char* next_function, char* last_function) {
-	code = mov_rax_8bytes(code, last_function);
-	
-	// mov [last_function], `mov rcx, $rdi`
-	code = mov_rax_byte(code, 0x48);
-	code = mov_rax1_byte(code, 0xb9);
-	code = mov_rax2_rdi(code);
-
-	code = mov_rax_8bytes(code, next_function);
-	return ret(code);
+	return wrap_reg(code, next_function, last_function, 0x48, 0xb9);
 }
 
 char* wrap_r8 (char* code, char* next_function, char* last_function) {
-	code = mov_rax_8bytes(code, last_function);
-	
-	// mov [last_function], `mov r8, $rdi`
-	code = mov_rax_byte(code, 0x49);
-	code = mov_rax1_byte(code, 0xb8);
-	code = mov_rax2_rdi(code);
-
-	code = mov_rax_8bytes(code, next_function);
-	return ret(code);
+	return wrap_reg(code, next_function, last_function, 0x49, 0xb8);
 }
 
 char* wrap_r9 (char* code, char* next_function, char* last_function) {
-	code = mov_rax_8bytes(code, last_function);
-	
-	// mov [last_function], `mov r9, $rdi`
-	code = mov_rax_byte(code, 0x49);
-	code = mov_rax1_byte(code, 0xb9);
-	code = mov_rax2_rdi(code);
-
-	code = mov_rax_8bytes(code, next_function);
-	return ret(code);
+	return wrap_reg(code, next_function, last_function, 0x49, 0xb9);
 }
 
 void* createfunction (void* fn, int arg_count, ...) {
@@ -152,7 +118,7 @@ void* createfunction (void* fn, int arg_count, ...) {
 	char* prog = mmap(0, mmap_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	// Prog is a pointer to the place we're currently writing code to, we need prog_beginning to remember where we started
 	char* prog_beginning = prog;
-	// last_call is a pointer to the place withing the last function where we're writing code
+	// last_call is a pointer to the place within the last function where we're writing code
 	char* last_call = prog + (mmap_size / 2);
 	// Since last_call moves around, we need last_call_beginning to remember where it starts
 	char* last_call_beginning = last_call;
