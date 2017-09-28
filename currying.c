@@ -4,193 +4,122 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/syscall.h>
 
 typedef enum { TYPE_INT, TYPE_DOUBLE } type;
 
-char* as_8_bytes (char buf[8], void* addr) {
-	*(buf++) = ((intptr_t) addr) & 0xFF;
-	*(buf++) = (((intptr_t) addr) >> 8) & 0xFF;
-	*(buf++) = (((intptr_t) addr) >> 16) & 0xFF;
-	*(buf++) = (((intptr_t) addr) >> 24) & 0xFF;
-	*(buf++) = (((intptr_t) addr) >> 32) & 0xFF;
-	*(buf++) = (((intptr_t) addr) >> 40) & 0xFF;
-	*(buf++) = (((intptr_t) addr) >> 48) & 0xFF;
-	*(buf++) = (((intptr_t) addr) >> 56) & 0xFF;
+// Size: 8 bytes
+char *as_8_bytes(char buf[8], intptr_t addr) {
+	*(buf++) = addr & 0xFF;
+	*(buf++) = (addr >> 8) & 0xFF;
+	*(buf++) = (addr >> 16) & 0xFF;
+	*(buf++) = (addr >> 24) & 0xFF;
+	*(buf++) = (addr >> 32) & 0xFF;
+	*(buf++) = (addr >> 40) & 0xFF;
+	*(buf++) = (addr >> 48) & 0xFF;
+	*(buf++) = (addr >> 56) & 0xFF;
 	return buf;
 }
 
-/* Size: 10 bytes/opcodes
- */
-char* mov_rax_8bytes (char* code, void* bytes) {
-	// mov rax, bytes
-	*(code++) = 0x48;
-	*(code++) = 0xb8;
-	return as_8_bytes(code, bytes);
-}
-
-/* Size: 3 bytes
- */
-char* mov_rax_byte (char* code, char byte) {
-	*(code++) = 0xc6;
-	*(code++) = 0x00;
-	*(code++) = byte;
+// Size: 3 bytes
+char *mov_r8_to_r9(char *code) {
+	*(code++) = 0x4D;
+	*(code++) = 0x89;
+	*(code++) = 0xC1;
 	return code;
 }
 
-/* Size: 4 bytes
- */
-char* mov_rax1_byte (char* code, char byte) {
-	*(code++) = 0xc6;
-	*(code++) = 0x40;
-	*(code++) = 0x01;
-	*(code++) = byte;
+// Size: 3 bytes
+char *mov_rcx_to_r8(char *code) {
+	*(code++) = 0x49;
+	*(code++) = 0x89;
+	*(code++) = 0xC8;
 	return code;
 }
 
-/* Size: 4 bytes
- */
-char* mov_rax_rdi (char* code) {
+// Size: 3 bytes
+char *mov_rdx_to_rcx(char *code) {
 	*(code++) = 0x48;
 	*(code++) = 0x89;
-	*(code++) = 0x78;
-	*(code++) = 0x02;
+	*(code++) = 0xD1;
 	return code;
 }
 
-/* Size: 1 byte
- */
-char* ret (char* code) {
-	// ret
-	*(code++) = 0xc3;
+// Size: 3 bytes
+char *mov_rsi_to_rdx(char *code) {
+	*(code++) = 0x48;
+	*(code++) = 0x89;
+	*(code++) = 0xF2;
 	return code;
 }
 
-/* code: Byte array where we can write the code that should be executed when a curryied function is called
- * next_function: The function address that should be returned by the curried call
- * last_function: The last curried function than can be called, offset to where it can be written to without overwriting it
- * reg1: the first byte of the ID of the reg, depends on modrm
- * reg2: the second byte-ID of the reg, depends on modrm
- * Size: 32 bytes
- */
-char* wrap_reg (char* code, char* next_function, char* last_function, char reg1, char reg2) {
-	code = mov_rax_8bytes(code, last_function);
-
-	// mov [last_function], `mov rdi, $rdi`
-	code = mov_rax_byte(code, reg1);
-	code = mov_rax1_byte(code, reg2);
-	code = mov_rax_rdi(code);
-	
-	code = mov_rax_8bytes(code, next_function);
-	return ret(code);
+// Size: 3 bytes
+char *mov_rdi_to_rsi(char *code) {
+	*(code++) = 0x48;
+	*(code++) = 0x89;
+	*(code++) = 0xFE;
+	return code;
 }
 
-char* wrap_rdi (char* code, char* next_function, char* last_function) {
-	return wrap_reg(code, next_function, last_function, 0x48, 0xbf);
+// Size: 10 bytes
+char *mov_intptr_to_rdi(char *code, intptr_t param) {
+	*(code++) = 0x48;
+	*(code++) = 0xBF;
+	code = as_8_bytes(code, param);
+	return code;
 }
 
-char* wrap_rsi (char* code, char* next_function, char* last_function) {
-	return wrap_reg(code, next_function, last_function, 0x48, 0xbe);
+// Size: 10 bytes
+char *mov_intptr_to_r11(char *code, intptr_t param) {
+	*(code++) = 0x49;
+	*(code++) = 0xBB;
+	code = as_8_bytes(code, param);
+	return code;
 }
 
-char* wrap_rdx (char* code, char* next_function, char* last_function) {
-	return wrap_reg(code, next_function, last_function, 0x48, 0xba);
+// Size: 2 bytes
+char *jmp_to_r11(char *code) {
+	*(code++) = 0x41;
+	*(code++) = 0xFF;
+	*(code++) = 0xE3;
+	return code;
 }
 
-char* wrap_rcx (char* code, char* next_function, char* last_function) {
-	return wrap_reg(code, next_function, last_function, 0x48, 0xb9);
-}
+void *curry_int(void *fn, intptr_t param) {
+	// Grab 64 bytes of executable memory
+	// 64 because moving the registers is 6*3=18 bytes
+	// Moving the param is 10 bytes
+	// Moving the fn pointer and jumping to it is 12 bytes
+	// 18+10+12 = 40 bytes, the closest power of two is 64
+	char *prog = mmap(0, 64, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	char *prog_beginning = prog;
 
-char* wrap_r8 (char* code, char* next_function, char* last_function) {
-	return wrap_reg(code, next_function, last_function, 0x49, 0xb8);
-}
+	// Write instructions of the curried function in executable memory
+	// Move everything to the right
+	prog = mov_r8_to_r9(prog);
+	prog = mov_rcx_to_r8(prog);
+	prog = mov_rdx_to_rcx(prog);
+	prog = mov_rsi_to_rdx(prog);
+	prog = mov_rdi_to_rsi(prog);
 
-char* wrap_r9 (char* code, char* next_function, char* last_function) {
-	return wrap_reg(code, next_function, last_function, 0x49, 0xb9);
-}
+	// Put the argument to the curried function in rdi
+	prog = mov_intptr_to_rdi(prog, param);
 
-void* createfunction (void* fn, int arg_count, ...) {
-	if (arg_count > 6)
-		return NULL;
-	// Why 512: each argument uses 32 bytes of memory and there's a maximum of 6 arguments.
-	// 32 * 6 = 192, the next power of two is 256. We then double that to make sure we have enough space for the function that calls the original curried function.
-	int mmap_size = 512;
-	// Grab write/exec memory for the code
-	char* prog = mmap(0, mmap_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	// Prog is a pointer to the place we're currently writing code to, we need prog_beginning to remember where we started
-	char* prog_beginning = prog;
-	// last_call is a pointer to the place within the last function where we're writing code
-	char* last_call = prog + (mmap_size / 2);
-	// Since last_call moves around, we need last_call_beginning to remember where it starts
-	char* last_call_beginning = last_call;
-	if (prog == (void*) -1) {
-		perror("mmap");
-		return NULL;
-	}
-
-	// Then for each argument
-	va_list arg_types;
-	va_start(arg_types, arg_count);
-
-	char* (*int_wrap[6])(char*, char*, char*) = { wrap_rdi, wrap_rsi, wrap_rdx, wrap_rcx, wrap_r8, wrap_r9 };
-	for (int i = 0; i < arg_count; ++i) {
-		if (va_arg(arg_types, type) == TYPE_INT) {
-			// 32: Number of bytes used by an int_wrap function
-			prog = int_wrap[i](prog, prog + 32, last_call);
-			// 10: Number of bytes added to last_call_cur by an int_wrap function
-			last_call += 10;
-		} else {
-			// Not supported yet
-			munmap(prog, mmap_size);
-			return NULL;
-		}
-	}
-
-	va_end(arg_types);
-
-	// Remove the last 'mov rax, next_function' and 'ret'.
-	prog -= 11;
-	// Instead 'mov r11, last_call_beginning'
-	*(prog++) = 0x49;
-	*(prog++) = 0xbb;
-	prog = as_8_bytes(prog, last_call_beginning);
-	// Then 'jmp r11'
-	*(prog++) = 0x41;
-	*(prog++) = 0xff;
-	*(prog++) = 0xe3;
-
-	// And in last_call, 'mov r11, fn'
-	*(last_call++) = 0x49;
-	*(last_call++) = 0xbb;
-	last_call = as_8_bytes(last_call, fn);
-	// Then 'jmp r11'
-	*(last_call++) = 0x41;
-	*(last_call++) = 0xff;
-	*(last_call++) = 0xe3;
+	// Jump to the actual function
+	prog = mov_intptr_to_r11(prog, (intptr_t) fn);
+	prog = jmp_to_r11(prog);
 
 	return prog_beginning;
 }
 
-int times (int x, int y) {
-	return x * y;
-}
-
-int add (int a, int b, int c, int d, int e, int f) {
+int add(int a, int b, int c, int d, int e, int f) {
 	return a + b + c + d + e + f;
 }
 
 int main() {
-	void* (*my_times)(int) = (void* (*)(int)) createfunction(times, 2, TYPE_INT, TYPE_INT);
-	int (*times_two)() = (int (*)(int)) my_times(2);
-	int three_times_two = times_two(3);
-	printf("2 * 3 = %i\n", three_times_two);
-
-	void* (*my_add)(int)    = (void* (*)(int)) createfunction(add, 6, TYPE_INT, TYPE_INT, TYPE_INT, TYPE_INT, TYPE_INT, TYPE_INT);
-	void* (*add_one)(int)   = (void* (*)(int)) my_add(1);
-	void* (*add_three)(int)   = (void* (*)(int)) add_one(2);
-	void* (*add_six)(int) = (void* (*)(int)) add_three(3);
-	void* (*add_ten)(int)  = (void* (*)(int)) add_six(4);
-	int   (*add_fifteen)(int)  = (int (*)(int)) add_ten(5);
-	printf("1 + 2 + 3 + 4 + 5 + 6 = %i\n", add_fifteen(6));
-	printf("1 + 2 + 3 + 4 + 5 + 0 = %i\n", add_fifteen(0));
+	int (*add_2) (int, int, int, int, int) = curry_int(add, 2);
+	printf("2 + 0 + 0 + 0 + 1 = %i\n", add_2(0, 0, 0, 0, 1));
+	int (*add_34) (int, int, int) = curry_int(curry_int(add_2, 5), 27);
+	printf("2 + 5 + 26 + 4 + 0 + 4 = %i\n", add_34(4, 0, 4));
 	return 0;
 }
