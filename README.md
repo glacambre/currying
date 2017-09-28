@@ -25,25 +25,22 @@ C doesn't have obvious support for anonymous functions, which can make it look
 like currying is impossible in C. However, everything is possible in C. This
 currying proof of concept relies on executable memory mappings created with
 mmap. We basically grab a bunch of memory, write x64 opcodes to it and return
-it in order to simulate anonymous functions. The difference between this
-implementation and the javascript one we saw earlier is that this
-implementation does everything into a single slab of memory, thus calling the
-same curried function multiple times overwrites the previously curried function.
+it in order to simulate anonymous functions.
 
 ### Implementation
 #### Compiling:
-Any gnu/linux compiler with optimizations disabled should work. Example:
+Any gnu/linux compiler with optimizations disabled should work. Just try
+running the makefile:
 ```shell
-gcc -std=c11 -O0 currying.c -o currying
+make
 ```
 
 #### Shortcomings of this implementation:
 - x64 only.
 - Only functions that take ints as parameters can be curried.
 - There's a maximum of 6 arguments per function.
-- Curried functions are overwritten instead of creating new functions.
-- Assumes SysV amd64 calling convention. Anything else will break.
-- Because of the previous point, compiler optimizations will probably break
+- Assumes SysV/Posix amd64 calling convention. Anything else will break.
+- Because of the previous point, compiler optimizations will might break
   everything too.
 
 #### Possible improvements:
@@ -52,11 +49,6 @@ gcc -std=c11 -O0 currying.c -o currying
   double/floats are needed.
 - The limit on the maximum number of arguments could be removed by putting
   arguments into the stack.
-- In order to avoid overwritting already created functions, curried functions
-  could dynamically call mmap and write to the mmap'ed memory segment and then
-  return it but I dislike this idea. I'd rather store the curried function's
-  size in memory before the function's opcode and manually copy the memory when
-  needed.
 - On an operating system that doesn't prevent a program from reading its own
-  code, we might imagine a way to deduce the calling convention and/or the
-  optimizations that happened and work around them.
+  code segment, we might imagine a way to deduce the calling convention and/or
+  the optimizations that happened and work around them.
